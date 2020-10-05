@@ -5,45 +5,37 @@ echo "Enter aws IAM user-name (not email)"
 read user_name
 
 echo "
-This script takes a few assumtions
-
-1] That you are not going to read this
-
-2] That your aws credential file, located at
-/Users/$USER/.aws/credentials, is in format:
-
-[default]
-aws_access_key_id = something
-aws_secret_access_key = something
-
-3] That you have jq installed on your system.
-If not, please run \`brew install jq\` in your terminal.
-
-4] You do not have 2 keys already on your aws account.
-Since a AWS IAM user is allowed only 2 keys, you wont be able to run this script. 
+This script makes an assumptions that
+you have generated aws credentials at least once.
 "
 
-echo "Enter \"yes\" to continue, Anything else to exit"
-read answer
+# Install jq if not installed
+check_jq=$(command -v jq | wc -l)
 
-if [ "$answer" == "yes" ]; then
-    echo -e "Proceeding..."
-else
-    exit 0
+if [ "$check_jq" -ne "1" ]; then
+	brew install jq
 fi
 
-aws_output=$(aws iam list-access-keys --user-name $user_name)
-
 # Check for valid amount of keys
+aws_output=$(aws iam list-access-keys --user-name $user_name)
 count_keys=$(echo $aws_output | jq . | grep AccessKeyId | wc -l | xargs)
 
 if [ "$count_keys" -eq "1" ]; then
-    echo -e "You have just one key. Thats good. Sit back, relax, have a beer or two."
+    echo -e "You have one key. Proceeding..."
+elif [[ $count_keys -eq "2" ]]; then
+	
+	two_keys=$(echo $aws_output | jq '.AccessKeyMetadata | .[] | .AccessKeyId' | xargs)
+	for word in $two_keys
+	do
+		echo "Please press q when you see \"END\""
+		sleep 2
+	    aws iam delete-access-key --access-key-id $word --user-name $user_name
+	    break
+	done
 else
-	echo -e "
-You have 2 or No keys. Delete old/unused keys for renewal. You can do so by visiting:
-console.aws.amazon.com/iam/home?region=us-east-1#/security_credentials"
-    exit 0
+	echo "You have no aws credentials. You need to create some.
+	You can do so by visiting: console.aws.amazon.com/iam/home?region=us-east-1#/security_credentials"
+	exit 0
 fi
 
 # Capture old key in variable
@@ -63,11 +55,10 @@ aws_access_key_id = $get_new_aws_access_key_id
 aws_secret_access_key = $get_new_aws_secret_access_key
 EOM
 
-echo -e "\n
+echo -e "
+Success!
 Your new AWS AccessKeyId is $get_new_aws_access_key_id
 Your new AWS SecretAccessKey is $get_new_aws_secret_access_key
-
-Success!
 
 To delete your old key, please run the following command:
 aws iam delete-access-key --access-key-id $get_accessKey_id --user-name $user_name
